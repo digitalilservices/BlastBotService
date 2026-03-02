@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os, json, asyncio, re, time, requests
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
@@ -24,7 +25,18 @@ print("=== BOT.PY STARTED ===", flush=True)
 print("CWD:", os.getcwd(), flush=True)
 print("FILES:", os.listdir("."), flush=True)
 
-os.makedirs("users", exist_ok=True)
+# ======================
+# PERSISTENT STORAGE (Render Disk)
+# ======================
+# На Render подключи Disk с mount path: /var/data
+# Локально можешь переопределить DATA_DIR переменной окружения, например DATA_DIR=./data
+DATA_DIR = Path(os.getenv("DATA_DIR", "/var/data"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+USERS_ROOT = DATA_DIR / "users"
+USERS_ROOT.mkdir(parents=True, exist_ok=True)
+
+OVERRIDE_FILE = DATA_DIR / "access_override.json"
 
 # ======================
 # INIT
@@ -43,11 +55,9 @@ PHONE_RE = re.compile(r"^\+\d{10,15}$")
 # ✅ Впиши сюда свой TG ID (можно несколько)
 ADMINS = {7447763153}  # <-- ЗАМЕНИ НА СВОЙ TG_ID
 
-OVERRIDE_FILE = "access_override.json"
-
 
 def _load_overrides() -> dict:
-    if not os.path.exists(OVERRIDE_FILE):
+    if not OVERRIDE_FILE.exists():
         return {}
     try:
         with open(OVERRIDE_FILE, "r", encoding="utf-8") as f:
@@ -112,47 +122,46 @@ def _p() -> PremiumEmoji:
 # ======================
 # HELPERS (FILES / USERS)
 # ======================
+def user_dir(uid) -> Path:
+    path = USERS_ROOT / f"user_{uid}"
+    (path / "sessions").mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def get_user_data(user_id):
-    user_file = f"users/user_{user_id}/user_data.json"
-    if os.path.exists(user_file):
-        with open(user_file, "r") as f:
+    user_file = user_dir(user_id) / "user_data.json"
+    if user_file.exists():
+        with open(user_file, "r", encoding="utf-8") as f:
             return json.load(f)
     return None
 
 
 def save_user_data(user_id, data):
-    user_dir_ = f"users/user_{user_id}"
-    os.makedirs(user_dir_, exist_ok=True)
-    with open(f"{user_dir_}/user_data.json", "w") as f:
-        json.dump(data, f, indent=2)
-
-
-def user_dir(uid):
-    path = f"users/user_{uid}"
-    os.makedirs(f"{path}/sessions", exist_ok=True)
-    return path
+    udir = user_dir(user_id)
+    with open(udir / "user_data.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def get_settings(uid):
     path = user_dir(uid)
-    file = f"{path}/settings.json"
-    if not os.path.exists(file):
+    file = path / "settings.json"
+    if not file.exists():
         return None
-    with open(file, "r") as f:
+    with open(file, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def get_user_text(uid):
     path = user_dir(uid)
-    file = f"{path}/message.json"
+    file = path / "message.json"
 
-    if not os.path.exists(file):
+    if not file.exists():
         return None
 
     with open(file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    if data["type"] == "forward":
+    if data.get("type") == "forward":
         return "✨ Пересланное сообщение\nPremium-стикеры сохранятся"
 
     return data.get("text", "")
@@ -160,15 +169,18 @@ def get_user_text(uid):
 
 def get_sessions(uid):
     path = user_dir(uid)
-    return [f for f in os.listdir(f"{path}/sessions") if f.endswith(".session")]
+    sess_dir = path / "sessions"
+    if not sess_dir.exists():
+        return []
+    return [f for f in os.listdir(sess_dir) if f.endswith(".session")]
 
 
 def get_accounts_info(uid):
     path = user_dir(uid)
-    file = f"{path}/accounts.json"
-    if not os.path.exists(file):
+    file = path / "accounts.json"
+    if not file.exists():
         return []
-    with open(file, "r") as f:
+    with open(file, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -181,16 +193,16 @@ TRIAL_SECONDS = 5 * 60
 
 def get_tariff(uid):
     path = user_dir(uid)
-    tf = f"{path}/tariff.json"
+    tf = path / "tariff.json"
 
-    if not os.path.exists(tf):
+    if not tf.exists():
         data = {
             "name": "FREE",
             "expires": int(time.time()) + TRIAL_SECONDS,
             "max_accounts": 999999999
         }
-        with open(tf, "w") as f:
-            json.dump(data, f)
+        with open(tf, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
 
         user_data = get_user_data(uid)
         if user_data:
@@ -199,13 +211,13 @@ def get_tariff(uid):
 
         return data
 
-    with open(tf, "r") as f:
+    with open(tf, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     if "max_accounts" not in data:
         data["max_accounts"] = 999999999
-        with open(tf, "w") as fw:
-            json.dump(data, fw, indent=2)
+        with open(tf, "w", encoding="utf-8") as fw:
+            json.dump(data, fw, indent=2, ensure_ascii=False)
 
     return data
 
@@ -590,7 +602,7 @@ async def get_phone(msg: types.Message, state):
 
     phone = msg.text.strip()
     path = user_dir(msg.from_user.id)
-    session_file = f"{path}/sessions/{phone}"
+    session_file = str(path / "sessions" / phone)
 
     client = create_custom_telegram_client(session_file)
     await client.connect()
@@ -617,11 +629,11 @@ async def get_code(msg: types.Message, state):
         await client.sign_in(phone=data["phone"], code=msg.text)
         me = await client.get_me()
 
-        accounts_file = f"{user_dir(uid)}/accounts.json"
+        accounts_file = user_dir(uid) / "accounts.json"
         accounts = []
 
-        if os.path.exists(accounts_file):
-            with open(accounts_file, "r") as f:
+        if accounts_file.exists():
+            with open(accounts_file, "r", encoding="utf-8") as f:
                 accounts = json.load(f)
 
         accounts.append({
@@ -629,8 +641,8 @@ async def get_code(msg: types.Message, state):
             "username": me.username or "no_username"
         })
 
-        with open(accounts_file, "w") as f:
-            json.dump(accounts, f, indent=2)
+        with open(accounts_file, "w", encoding="utf-8") as f:
+            json.dump(accounts, f, indent=2, ensure_ascii=False)
 
         user_data = get_user_data(uid)
         if user_data:
@@ -659,11 +671,11 @@ async def get_password(msg: types.Message, state):
         data = await state.get_data()
         me = await client.get_me()
 
-        accounts_file = f"{user_dir(uid)}/accounts.json"
+        accounts_file = user_dir(uid) / "accounts.json"
         accounts = []
 
-        if os.path.exists(accounts_file):
-            with open(accounts_file, "r") as f:
+        if accounts_file.exists():
+            with open(accounts_file, "r", encoding="utf-8") as f:
                 accounts = json.load(f)
 
         accounts.append({
@@ -671,8 +683,8 @@ async def get_password(msg: types.Message, state):
             "username": me.username or "no_username"
         })
 
-        with open(accounts_file, "w") as f:
-            json.dump(accounts, f, indent=2)
+        with open(accounts_file, "w", encoding="utf-8") as f:
+            json.dump(accounts, f, indent=2, ensure_ascii=False)
 
         user_data = get_user_data(uid)
         if user_data:
@@ -715,7 +727,7 @@ async def save_text(msg: types.Message, state):
     else:
         data = {"type": "copy", "text": msg.text or msg.caption or ""}
 
-    with open(f"{path}/message.json", "w", encoding="utf-8") as f:
+    with open(path / "message.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
     await msg.answer("✅ Сообщение сохранено", reply_markup=menu(msg.from_user.id))
@@ -767,8 +779,8 @@ async def set_cycle(msg: types.Message, state):
         "delay_between_cycles": int(msg.text) * 60
     }
 
-    with open(f"{path}/settings.json", "w") as f:
-        json.dump(settings, f, indent=2)
+    with open(path / "settings.json", "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
 
     await msg.answer("✅ Настройки сохранены", reply_markup=menu(msg.from_user.id))
     await state.finish()
@@ -874,10 +886,10 @@ async def start_work(msg: types.Message, state):
     if not accounts:
         await msg.answer("❌ Нет подключённых аккаунтов", reply_markup=menu(uid))
         return
-    if not os.path.exists(f"{path}/message.json"):
+    if not (path / "message.json").exists():
         await msg.answer("❌ Нет текста", reply_markup=menu(uid))
         return
-    if not os.path.exists(f"{path}/settings.json"):
+    if not (path / "settings.json").exists():
         await msg.answer("❌ Нет настроек", reply_markup=menu(uid))
         return
 
@@ -932,7 +944,8 @@ async def start_work(msg: types.Message, state):
         except Exception:
             pass
 
-    task = asyncio.create_task(spam_worker(path, stop_flag, progress))
+    # spam_worker раньше получал строковый path — оставляем строку, чтобы ничего не сломать
+    task = asyncio.create_task(spam_worker(str(path), stop_flag, progress))
     workers[uid]["task"] = task
 
 
