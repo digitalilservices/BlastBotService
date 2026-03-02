@@ -187,8 +187,8 @@ def get_accounts_info(uid):
 # ======================
 # FREE TRIAL (5 MIN сейчас)
 # ======================
-# Чтобы вернуть обратно на 24 часа: поставь 24 * 60 * 60
-TRIAL_SECONDS = 5 * 60
+# Чтобы вернуть обратно на 24 часа: поставь 
+TRIAL_SECONDS = 24 * 60 * 60
 
 
 def get_tariff(uid):
@@ -992,3 +992,4 @@ if __name__ == "__main__":
         print("FATAL ERROR:", e, flush=True)
         traceback.print_exc()
         time.sleep(60)
+
