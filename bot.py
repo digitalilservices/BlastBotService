@@ -303,8 +303,8 @@ class DigiBotAccessMiddleware(BaseMiddleware):
         text = (
             "⛔ <b>Доступ запрещён</b>\n\n"
             "🎁 <b>Ваш бесплатный доступ закончился.</b>\n\n"
-            "<b>Чтобы пользоваться ботом дальше — активируйте статус «Активный» в</b> @DigiServis_bot.\n\n"
-            "👉 <b>Открой DigiBot → Кабинет → получи статус «Активный».</b>"
+            "<b>Чтобы пользоваться ботом дальше — активируйте статус «Активный» в</b> @DigaroBot.\n\n"
+            "👉 <b>Открой DigaroBot → Кабинет → получи статус «Активный».</b>"
         )
         await _p().answer_html(message, text, reply_markup=menu(uid))
         raise CancelHandler()
@@ -316,12 +316,12 @@ class DigiBotAccessMiddleware(BaseMiddleware):
         if ok:
             return
 
-        await call.answer("⛔ Доступ запрещён. Активируй «Активный» в DigiBot.", show_alert=True)
+        await call.answer("⛔ Доступ запрещён. Активируй «Активный» в DigaroBot.", show_alert=True)
         try:
             text = (
                 "⛔ <b>Доступ запрещён</b>\n\n"
                 "<b>Бесплатный доступ закончился.</b>\n\n"
-                "<b>Чтобы продолжить — активируйте статус «Активный» в</b> @DigiServis_bot"
+                "<b>Чтобы продолжить — активируйте статус «Активный» в</b> @DigaroBot"
             )
             await _p().answer_html(call.message, text, reply_markup=menu(uid))
         except Exception:
@@ -426,7 +426,7 @@ async def start(msg: types.Message, state):
         "🚀 <b>Telegram-сервис для автоматической рассылки сообщений</b>\n"
         "<b>в чаты с нескольких аккаунтов.</b>\n\n"
         "🎁 <b>Бесплатный тест — 24 часа</b>\n"
-        "<b>После 24 часов доступ будет только со статусом «Активный» в</b> @DigiServis_bot\n\n"
+        "<b>После 24 часов доступ будет только со статусом «Активный» в</b> @DigaroBot\n\n"
         "⬇️ Выберите действие ниже"
     )
     await _p().answer_html(msg, text, reply_markup=menu(user.id))
@@ -482,7 +482,7 @@ async def admin_panel(msg: types.Message, state):
         "<code>/revoke USER_ID</code>\n\n"
         "📋 Список:\n"
         "<code>/grants</code>\n\n"
-        "ℹ️ Ручной доступ даёт вход в бота даже без статуса Active в DigiBot."
+        "ℹ️ Ручной доступ даёт вход в бота даже без статуса Active в DigaroBot."
     )
     await _p().answer_html(msg, text, reply_markup=menu(msg.from_user.id))
 
@@ -836,7 +836,7 @@ async def cabinet(msg: types.Message, state):
                 text += f"⏳ Осталось: <b>{hours_left} ч. {minutes_left} мин.</b>\n"
             else:
                 text += "⏳ <b>Срок истёк</b>\n"
-                text += "✅ Дальше доступ только со статусом <b>Активный</b> в DigiBot\n"
+                text += "✅ Дальше доступ только со статусом <b>Активный</b> в @DigaroBot\n"
         text += "\n"
 
     text += "📄 <b>Текст рассылки:</b>\n"
@@ -992,4 +992,5 @@ if __name__ == "__main__":
         print("FATAL ERROR:", e, flush=True)
         traceback.print_exc()
         time.sleep(60)
+
 
