@@ -867,6 +867,69 @@ async def cabinet(msg: types.Message, state):
 
     await _p().answer_html(msg, text, reply_markup=menu(uid))
 
+@dp.message_handler(lambda m: m.text and m.text.startswith("del"), state="*")
+async def delete_account(msg: types.Message, state):
+    await state.finish()
+
+    uid = msg.from_user.id
+    parts = msg.text.split()
+
+    path = user_dir(uid)
+    sessions_dir = path / "sessions"
+    accounts_file = path / "accounts.json"
+
+    if not accounts_file.exists():
+        await msg.answer("❌ Аккаунтов нет", reply_markup=menu(uid))
+        return
+
+    with open(accounts_file, "r", encoding="utf-8") as f:
+        accounts = json.load(f)
+
+    if len(parts) < 2:
+        await msg.answer("❌ Укажи номер аккаунта\nПример: del 1", reply_markup=menu(uid))
+        return
+
+    arg = parts[1].lower()
+
+    # удалить все
+    if arg == "all":
+        for file in os.listdir(sessions_dir):
+            if file.endswith(".session"):
+                try:
+                    os.remove(sessions_dir / file)
+                except:
+                    pass
+
+        with open(accounts_file, "w", encoding="utf-8") as f:
+            json.dump([], f)
+
+        await msg.answer("✅ Все аккаунты удалены", reply_markup=menu(uid))
+        return
+
+    # удалить один
+    if not arg.isdigit():
+        await msg.answer("❌ Неверный номер", reply_markup=menu(uid))
+        return
+
+    index = int(arg) - 1
+
+    if index < 0 or index >= len(accounts):
+        await msg.answer("❌ Такого аккаунта нет", reply_markup=menu(uid))
+        return
+
+    phone = accounts[index]["phone"]
+
+    try:
+        os.remove(sessions_dir / f"{phone}.session")
+    except:
+        pass
+
+    accounts.pop(index)
+
+    with open(accounts_file, "w", encoding="utf-8") as f:
+        json.dump(accounts, f, indent=2, ensure_ascii=False)
+
+    await msg.answer("✅ Аккаунт удалён", reply_markup=menu(uid))
 
 # ======================
 # START / STOP WORK
@@ -992,5 +1055,3 @@ if __name__ == "__main__":
         print("FATAL ERROR:", e, flush=True)
         traceback.print_exc()
         time.sleep(60)
-
-
