@@ -45,15 +45,23 @@ async def spam_worker(user_dir, stop_flag, progress_cb):
             client = TelegramClient(
                 f"{sessions_dir}/{acc_name}",
                 API_ID,
-                API_HASH
+                API_HASH,
+                device_model="Samsung Galaxy S21",
+                system_version="Android 13",
+                app_version="9.6.3",
+                lang_code="ru",
+                system_lang_code="ru"
             )
 
             sent_from_account = 0
 
             try:
-                await client.start()
+                await client.connect()
 
-                async for dialog in client.iter_dialogs():
+                if not await client.is_user_authorized():
+                    continue
+
+                async for dialog in client.iter_dialogs(limit=500):
                     if stop_flag["stop"]:
                         break
 
@@ -92,7 +100,7 @@ async def spam_worker(user_dir, stop_flag, progress_cb):
                         await progress_cb(sent, errors_count)
 
                         await asyncio.sleep(
-                            random.randint(delay_groups, delay_groups + 3)
+                            random.randint(delay_groups, delay_groups + 10)
                         )
 
                     except (
@@ -102,8 +110,22 @@ async def spam_worker(user_dir, stop_flag, progress_cb):
                     ):
                         continue
 
-                    except Exception:
+                    except errors.FloodWaitError as e:
+                        await asyncio.sleep(e.seconds)
+                        continue
+
+                    except errors.ChatWriteForbiddenError:
+                        continue
+
+                    except errors.ChannelPrivateError:
+                        continue
+
+                    except errors.UserBannedInChannelError:
+                        continue
+
+                    except Exception as e:
                         errors_count += 1
+                        print("SEND ERROR:", e)
                         continue
 
             except Exception:
