@@ -1,7 +1,11 @@
-# bot.py
 from __future__ import annotations
 
-import os, json, asyncio, re, time, requests
+import os
+import json
+import asyncio
+import re
+import time
+import requests
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, executor, types
@@ -16,8 +20,6 @@ from telethon.errors import SessionPasswordNeededError
 
 from worker import spam_worker
 from config import BOT_TOKEN, API_ID, API_HASH, DIGIBOT_BASE_URL, DIGIBOT_INTERNAL_API_KEY
-
-# ✅ Premium emoji helper (entities + HTML)
 from premium_emoji import PremiumEmoji
 
 
@@ -26,10 +28,8 @@ print("CWD:", os.getcwd(), flush=True)
 print("FILES:", os.listdir("."), flush=True)
 
 # ======================
-# PERSISTENT STORAGE (Render Disk)
+# PERSISTENT STORAGE
 # ======================
-# На Render подключи Disk с mount path: /var/data
-# Локально можешь переопределить DATA_DIR переменной окружения, например DATA_DIR=./data
 DATA_DIR = Path(os.getenv("DATA_DIR", "/var/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -50,12 +50,30 @@ login_clients = {}
 PHONE_RE = re.compile(r"^\+\d{10,15}$")
 
 # ======================
-# ADMIN / OVERRIDE ACCESS
+# ADMINS
 # ======================
-# ✅ Впиши сюда свой TG ID (можно несколько)
 ADMINS = {7447763153}  # <-- ЗАМЕНИ НА СВОЙ TG_ID
 
+# ======================
+# PREMIUM EMOJI
+# ======================
+PREMIUM_STICKER_SETS = [
+    "sefhvm_by_EmojiTitleBot",
+]
 
+premium: PremiumEmoji | None = None
+
+
+def _p() -> PremiumEmoji:
+    global premium
+    if premium is None:
+        premium = PremiumEmoji(emoji_map={})
+    return premium
+
+
+# ======================
+# OVERRIDES
+# ======================
 def _load_overrides() -> dict:
     if not OVERRIDE_FILE.exists():
         return {}
@@ -72,10 +90,6 @@ def _save_overrides(data: dict) -> None:
 
 
 def grant_access(uid: int, minutes: int | None = None) -> None:
-    """
-    minutes=None -> навсегда
-    minutes=10 -> на 10 минут
-    """
     data = _load_overrides()
     if minutes is None:
         data[str(uid)] = {"expires": 0}
@@ -95,40 +109,24 @@ def has_override(uid: int) -> bool:
     row = data.get(str(uid))
     if not row:
         return False
+
     exp = int(row.get("expires", 0))
     if exp == 0:
         return True
+
     return time.time() < exp
 
 
 # ======================
-# PREMIUM EMOJI PACKS
+# HELPERS
 # ======================
-# https://t.me/addstickers/SHORT_NAME  -> нужен только SHORT_NAME
-PREMIUM_STICKER_SETS = [
-    "sefhvm_by_EmojiTitleBot",
-]
-
-premium: PremiumEmoji | None = None
-
-
-def _p() -> PremiumEmoji:
-    global premium
-    if premium is None:
-        premium = PremiumEmoji(emoji_map={})
-    return premium
-
-
-# ======================
-# HELPERS (FILES / USERS)
-# ======================
-def user_dir(uid) -> Path:
+def user_dir(uid: int) -> Path:
     path = USERS_ROOT / f"user_{uid}"
     (path / "sessions").mkdir(parents=True, exist_ok=True)
     return path
 
 
-def get_user_data(user_id):
+def get_user_data(user_id: int):
     user_file = user_dir(user_id) / "user_data.json"
     if user_file.exists():
         with open(user_file, "r", encoding="utf-8") as f:
@@ -136,25 +134,22 @@ def get_user_data(user_id):
     return None
 
 
-def save_user_data(user_id, data):
+def save_user_data(user_id: int, data: dict):
     udir = user_dir(user_id)
     with open(udir / "user_data.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-def get_settings(uid):
-    path = user_dir(uid)
-    file = path / "settings.json"
+def get_settings(uid: int):
+    file = user_dir(uid) / "settings.json"
     if not file.exists():
         return None
     with open(file, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def get_user_text(uid):
-    path = user_dir(uid)
-    file = path / "message.json"
-
+def get_user_text(uid: int):
+    file = user_dir(uid) / "message.json"
     if not file.exists():
         return None
 
@@ -167,33 +162,35 @@ def get_user_text(uid):
     return data.get("text", "")
 
 
-def get_sessions(uid):
-    path = user_dir(uid)
-    sess_dir = path / "sessions"
+def get_sessions(uid: int):
+    sess_dir = user_dir(uid) / "sessions"
     if not sess_dir.exists():
         return []
     return [f for f in os.listdir(sess_dir) if f.endswith(".session")]
 
 
-def get_accounts_info(uid):
-    path = user_dir(uid)
-    file = path / "accounts.json"
+def get_accounts_info(uid: int):
+    file = user_dir(uid) / "accounts.json"
     if not file.exists():
         return []
     with open(file, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
+def save_accounts_info(uid: int, accounts: list):
+    file = user_dir(uid) / "accounts.json"
+    with open(file, "w", encoding="utf-8") as f:
+        json.dump(accounts, f, indent=2, ensure_ascii=False)
+
+
 # ======================
-# FREE TRIAL (5 MIN сейчас)
+# FREE TRIAL
 # ======================
-# Чтобы вернуть обратно на 24 часа: поставь 
 TRIAL_SECONDS = 24 * 60 * 60
 
 
-def get_tariff(uid):
-    path = user_dir(uid)
-    tf = path / "tariff.json"
+def get_tariff(uid: int):
+    tf = user_dir(uid) / "tariff.json"
 
     if not tf.exists():
         data = {
@@ -231,9 +228,9 @@ def trial_is_active(uid: int) -> bool:
 
 
 # ======================
-# DIGIBOT ACTIVE CHECK
+# DIGIBOT STATUS
 # ======================
-_DIGI_CACHE = {}  # uid -> (expire_ts, is_active, status)
+_DIGI_CACHE = {}
 
 
 async def digibot_check_active(uid: int) -> tuple[bool, str]:
@@ -246,7 +243,10 @@ async def digibot_check_active(uid: int) -> tuple[bool, str]:
         return False, "unknown"
 
     url = f"{DIGIBOT_BASE_URL}/internal/status"
-    headers = {"X-API-Key": DIGIBOT_INTERNAL_API_KEY, "Content-Type": "application/json"}
+    headers = {
+        "X-API-Key": DIGIBOT_INTERNAL_API_KEY,
+        "Content-Type": "application/json"
+    }
     payload = {"tg_id": int(uid)}
 
     def _req():
@@ -269,19 +269,15 @@ async def digibot_check_active(uid: int) -> tuple[bool, str]:
 
 
 async def access_allowed(uid: int) -> bool:
-    # ✅ админ всегда проходит
     if uid in ADMINS:
         return True
 
-    # ✅ ручная выдача доступа (обход DigiBot)
     if has_override(uid):
         return True
 
-    # trial
     if trial_is_active(uid):
         return True
 
-    # DigiBot
     is_active, _ = await digibot_check_active(uid)
     return bool(is_active)
 
@@ -344,7 +340,6 @@ def menu(uid: int | None = None):
     kb.add("▶️ Начать работу")
     kb.add("⛔ Остановить")
 
-    # ✅ кнопка видна только админу
     if uid is not None and uid in ADMINS:
         kb.add("🛡 Админ")
 
@@ -360,7 +355,7 @@ def back_kb():
 # ======================
 # TELETHON CLIENT
 # ======================
-def create_custom_telegram_client(session_file):
+def create_custom_telegram_client(session_file: str):
     return TelegramClient(
         session_file,
         API_ID,
@@ -373,10 +368,13 @@ def create_custom_telegram_client(session_file):
     )
 
 
-async def reset_login(uid):
+async def reset_login(uid: int):
     client = login_clients.get(uid)
     if client:
-        await client.disconnect()
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
         login_clients.pop(uid, None)
 
 
@@ -443,7 +441,7 @@ async def back(msg: types.Message, state):
 
 
 # ======================
-# ПОЛЬЗОВАНИЕ
+# GUIDE
 # ======================
 @dp.message_handler(lambda m: m.text == "📘 Для Новичка", state="*")
 async def usage(msg: types.Message, state):
@@ -512,7 +510,6 @@ async def cmd_grant(msg: types.Message, state):
     else:
         await msg.answer(f"✅ Доступ выдан на {minutes} минут для {uid}", reply_markup=menu(msg.from_user.id))
 
-    # опционально уведомить пользователя
     try:
         await bot.send_message(uid, "✅ Вам выдан доступ к боту администратором.")
     except Exception:
@@ -573,7 +570,7 @@ async def cmd_grants(msg: types.Message, state):
 
 
 # ======================
-# АККАУНТЫ
+# ACCOUNTS
 # ======================
 @dp.message_handler(lambda m: m.text == "🔓 Подключить", state="*")
 async def add_account(msg: types.Message, state):
@@ -590,59 +587,77 @@ async def add_account(msg: types.Message, state):
 
     await reset_login(msg.from_user.id)
     await state.finish()
-    await msg.answer("📱 Введи номер телефона: (+1)\nЖди код ", reply_markup=back_kb())
+    await msg.answer("📱 Введи номер телефона в формате +380XXXXXXXXX", reply_markup=back_kb())
     await PhoneState.phone.set()
 
 
 @dp.message_handler(state=PhoneState.phone)
 async def get_phone(msg: types.Message, state):
-    if not PHONE_RE.match(msg.text.strip()):
-        await msg.answer("❌ Неверный формат номера\nПример: +1XXXXXXXX", reply_markup=back_kb())
+    text = (msg.text or "").strip()
+
+    if not PHONE_RE.match(text):
+        await msg.answer("❌ Неверный формат номера\nПример: +380XXXXXXXXX", reply_markup=back_kb())
         return
 
-    phone = msg.text.strip()
+    phone = text
     path = user_dir(msg.from_user.id)
     session_file = str(path / "sessions" / phone)
 
-    client = create_custom_telegram_client(session_file)
-    await client.connect()
-    await client.send_code_request(phone)
+    client = None
+    try:
+        await reset_login(msg.from_user.id)
 
-    login_clients[msg.from_user.id] = client
-    await state.update_data(phone=phone)
+        client = create_custom_telegram_client(session_file)
+        await client.connect()
+        await client.send_code_request(phone)
 
-    await msg.answer("🔐 Введи код из Telegram\n", reply_markup=back_kb())
-    await PhoneState.code.set()
+        login_clients[msg.from_user.id] = client
+        await state.update_data(phone=phone)
+
+        await msg.answer("🔐 Введи код из Telegram", reply_markup=back_kb())
+        await PhoneState.code.set()
+
+    except Exception as e:
+        try:
+            if client:
+                await client.disconnect()
+        except Exception:
+            pass
+
+        await msg.answer(f"❌ Не удалось отправить код: {e}", reply_markup=menu(msg.from_user.id))
+        await state.finish()
 
 
 @dp.message_handler(state=PhoneState.code)
 async def get_code(msg: types.Message, state):
-    if not msg.text.isdigit():
+    uid = msg.from_user.id
+    code = (msg.text or "").strip()
+
+    if not code.isdigit():
         await msg.answer("❌ Код должен быть числом", reply_markup=back_kb())
         return
 
-    uid = msg.from_user.id
     data = await state.get_data()
     client = login_clients.get(uid)
 
+    if not client:
+        await msg.answer("❌ Сессия входа потеряна. Подключи аккаунт заново.", reply_markup=menu(uid))
+        await state.finish()
+        return
+
     try:
-        await client.sign_in(phone=data["phone"], code=msg.text)
+        await client.sign_in(phone=data["phone"], code=code)
         me = await client.get_me()
 
-        accounts_file = user_dir(uid) / "accounts.json"
-        accounts = []
+        accounts = get_accounts_info(uid)
+        exists = any(acc.get("phone") == data["phone"] for acc in accounts)
 
-        if accounts_file.exists():
-            with open(accounts_file, "r", encoding="utf-8") as f:
-                accounts = json.load(f)
-
-        accounts.append({
-            "phone": data["phone"],
-            "username": me.username or "no_username"
-        })
-
-        with open(accounts_file, "w", encoding="utf-8") as f:
-            json.dump(accounts, f, indent=2, ensure_ascii=False)
+        if not exists:
+            accounts.append({
+                "phone": data["phone"],
+                "username": me.username or "no_username"
+            })
+            save_accounts_info(uid, accounts)
 
         user_data = get_user_data(uid)
         if user_data:
@@ -650,10 +665,12 @@ async def get_code(msg: types.Message, state):
             save_user_data(uid, user_data)
 
         await msg.answer("✅ Аккаунт успешно добавлен", reply_markup=menu(uid))
+
     except SessionPasswordNeededError:
-        await msg.answer("🔑 Включена 2FA. Введи пароль", reply_markup=back_kb())
+        await msg.answer("🔑 На аккаунте включена 2FA. Введи пароль.", reply_markup=back_kb())
         await PhoneState.password.set()
         return
+
     except Exception as e:
         await msg.answer(f"❌ Ошибка входа: {e}", reply_markup=menu(uid))
 
@@ -666,25 +683,25 @@ async def get_password(msg: types.Message, state):
     uid = msg.from_user.id
     client = login_clients.get(uid)
 
+    if not client:
+        await msg.answer("❌ Сессия входа потеряна. Подключи аккаунт заново.", reply_markup=menu(uid))
+        await state.finish()
+        return
+
     try:
-        await client.sign_in(password=msg.text.strip())
+        await client.sign_in(password=(msg.text or "").strip())
         data = await state.get_data()
         me = await client.get_me()
 
-        accounts_file = user_dir(uid) / "accounts.json"
-        accounts = []
+        accounts = get_accounts_info(uid)
+        exists = any(acc.get("phone") == data["phone"] for acc in accounts)
 
-        if accounts_file.exists():
-            with open(accounts_file, "r", encoding="utf-8") as f:
-                accounts = json.load(f)
-
-        accounts.append({
-            "phone": data["phone"],
-            "username": me.username or "no_username"
-        })
-
-        with open(accounts_file, "w", encoding="utf-8") as f:
-            json.dump(accounts, f, indent=2, ensure_ascii=False)
+        if not exists:
+            accounts.append({
+                "phone": data["phone"],
+                "username": me.username or "no_username"
+            })
+            save_accounts_info(uid, accounts)
 
         user_data = get_user_data(uid)
         if user_data:
@@ -692,6 +709,7 @@ async def get_password(msg: types.Message, state):
             save_user_data(uid, user_data)
 
         await msg.answer("✅ Аккаунт добавлен (2FA)", reply_markup=menu(uid))
+
     except Exception as e:
         await msg.answer(f"❌ Ошибка 2FA: {e}", reply_markup=menu(uid))
 
@@ -700,10 +718,10 @@ async def get_password(msg: types.Message, state):
 
 
 # ======================
-# ТЕКСТ
+# MESSAGE TEXT
 # ======================
 @dp.message_handler(lambda m: m.text == "📝 Текст", state="*")
-async def text(msg: types.Message, state):
+async def text_message(msg: types.Message, state):
     await state.finish()
     await msg.answer("✍️ Отправь текст рассылки", reply_markup=back_kb())
     await TextState.waiting.set()
@@ -719,23 +737,37 @@ async def save_text(msg: types.Message, state):
             await state.finish()
             return
 
+        if not msg.forward_from_message_id:
+            await msg.answer("❌ Не удалось получить ID пересланного сообщения", reply_markup=menu(msg.from_user.id))
+            await state.finish()
+            return
+
         data = {
             "type": "forward",
             "from_chat_id": msg.forward_from_chat.id,
             "message_id": msg.forward_from_message_id
         }
     else:
-        data = {"type": "copy", "text": msg.text or msg.caption or ""}
+        text_value = (msg.text or msg.caption or "").strip()
+        if not text_value:
+            await msg.answer("❌ Пустой текст нельзя сохранить", reply_markup=menu(msg.from_user.id))
+            await state.finish()
+            return
+
+        data = {
+            "type": "copy",
+            "text": text_value
+        }
 
     with open(path / "message.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
     await msg.answer("✅ Сообщение сохранено", reply_markup=menu(msg.from_user.id))
     await state.finish()
 
 
 # ======================
-# НАСТРОЙКИ
+# SETTINGS
 # ======================
 @dp.message_handler(lambda m: m.text == "⚙️ Настройки", state="*")
 async def settings_start(msg: types.Message, state):
@@ -746,27 +778,32 @@ async def settings_start(msg: types.Message, state):
 
 @dp.message_handler(state=SettingsFSM.delay_groups)
 async def set_delay_groups(msg: types.Message, state):
-    if not msg.text.isdigit():
+    text = (msg.text or "").strip()
+    if not text.isdigit():
         await msg.answer("❌ Нужно число", reply_markup=back_kb())
         return
-    await state.update_data(delay_between_groups=int(msg.text))
+
+    await state.update_data(delay_between_groups=int(text))
     await msg.answer("👥 Сколько групп брать с одного аккаунта?", reply_markup=back_kb())
     await SettingsFSM.groups_count.set()
 
 
 @dp.message_handler(state=SettingsFSM.groups_count)
 async def set_groups(msg: types.Message, state):
-    if not msg.text.isdigit():
+    text = (msg.text or "").strip()
+    if not text.isdigit():
         await msg.answer("❌ Нужно число", reply_markup=back_kb())
         return
-    await state.update_data(groups_per_account=int(msg.text))
-    await msg.answer("⏳ Задержка после всех аккаунтов (Минуты):", reply_markup=back_kb())
+
+    await state.update_data(groups_per_account=int(text))
+    await msg.answer("⏳ Задержка после всех аккаунтов (минуты):", reply_markup=back_kb())
     await SettingsFSM.delay_cycle.set()
 
 
 @dp.message_handler(state=SettingsFSM.delay_cycle)
 async def set_cycle(msg: types.Message, state):
-    if not msg.text.isdigit():
+    text = (msg.text or "").strip()
+    if not text.isdigit():
         await msg.answer("❌ Нужно число", reply_markup=back_kb())
         return
 
@@ -774,9 +811,9 @@ async def set_cycle(msg: types.Message, state):
     path = user_dir(msg.from_user.id)
 
     settings = {
-        "delay_between_groups": data["delay_between_groups"],
-        "groups_per_account": data["groups_per_account"],
-        "delay_between_cycles": int(msg.text) * 60
+        "delay_between_groups": int(data["delay_between_groups"]),
+        "groups_per_account": int(data["groups_per_account"]),
+        "delay_between_cycles": int(text) * 60
     }
 
     with open(path / "settings.json", "w", encoding="utf-8") as f:
@@ -787,7 +824,7 @@ async def set_cycle(msg: types.Message, state):
 
 
 # ======================
-# ЛИЧНЫЙ КАБИНЕТ
+# CABINET
 # ======================
 @dp.message_handler(lambda m: m.text == "👤 Личный кабинет", state="*")
 async def cabinet(msg: types.Message, state):
@@ -799,12 +836,9 @@ async def cabinet(msg: types.Message, state):
     text_msg = get_user_text(uid)
     settings = get_settings(uid)
 
-    # ✅ проверяем статус в DigiBot
     is_active, status = await digibot_check_active(uid)
     status_norm = (status or "").strip().lower()
     has_paid_access = bool(is_active) or status_norm in ("active", "leader", "активный", "лидер")
-
-    # ✅ если админ выдал ручной доступ — тоже показываем как активный доступ
     has_manual = has_override(uid)
 
     text = "👤 <b>Личный кабинет</b>\n\n"
@@ -821,7 +855,6 @@ async def cabinet(msg: types.Message, state):
 
     text += "\n"
 
-    # ✅ Блок доступа
     if has_paid_access:
         text += "✅ <b>Статус Активный</b>\n\n"
     elif has_manual:
@@ -867,6 +900,7 @@ async def cabinet(msg: types.Message, state):
 
     await _p().answer_html(msg, text, reply_markup=menu(uid))
 
+
 @dp.message_handler(lambda m: m.text and m.text.startswith("del"), state="*")
 async def delete_account(msg: types.Message, state):
     await state.finish()
@@ -891,22 +925,25 @@ async def delete_account(msg: types.Message, state):
 
     arg = parts[1].lower()
 
-    # удалить все
     if arg == "all":
         for file in os.listdir(sessions_dir):
             if file.endswith(".session"):
                 try:
                     os.remove(sessions_dir / file)
-                except:
+                except Exception:
                     pass
 
         with open(accounts_file, "w", encoding="utf-8") as f:
-            json.dump([], f)
+            json.dump([], f, indent=2, ensure_ascii=False)
+
+        user_data = get_user_data(uid)
+        if user_data:
+            user_data["accounts_connected_count"] = 0
+            save_user_data(uid, user_data)
 
         await msg.answer("✅ Все аккаунты удалены", reply_markup=menu(uid))
         return
 
-    # удалить один
     if not arg.isdigit():
         await msg.answer("❌ Неверный номер", reply_markup=menu(uid))
         return
@@ -921,7 +958,7 @@ async def delete_account(msg: types.Message, state):
 
     try:
         os.remove(sessions_dir / f"{phone}.session")
-    except:
+    except Exception:
         pass
 
     accounts.pop(index)
@@ -929,16 +966,21 @@ async def delete_account(msg: types.Message, state):
     with open(accounts_file, "w", encoding="utf-8") as f:
         json.dump(accounts, f, indent=2, ensure_ascii=False)
 
+    user_data = get_user_data(uid)
+    if user_data:
+        user_data["accounts_connected_count"] = len(accounts)
+        save_user_data(uid, user_data)
+
     await msg.answer("✅ Аккаунт удалён", reply_markup=menu(uid))
 
+
 # ======================
-# START / STOP WORK
+# START / STOP
 # ======================
 @dp.message_handler(lambda m: m.text == "▶️ Начать работу", state="*")
 async def start_work(msg: types.Message, state):
     await state.finish()
     uid = msg.from_user.id
-
     path = user_dir(uid)
 
     if uid in workers and not workers[uid]["stop"]:
@@ -949,11 +991,24 @@ async def start_work(msg: types.Message, state):
     if not accounts:
         await msg.answer("❌ Нет подключённых аккаунтов", reply_markup=menu(uid))
         return
+
     if not (path / "message.json").exists():
         await msg.answer("❌ Нет текста", reply_markup=menu(uid))
         return
+
     if not (path / "settings.json").exists():
         await msg.answer("❌ Нет настроек", reply_markup=menu(uid))
+        return
+
+    try:
+        with open(path / "message.json", "r", encoding="utf-8") as f:
+            message_data = json.load(f)
+
+        if message_data.get("type") == "copy" and not (message_data.get("text") or "").strip():
+            await msg.answer("❌ Текст сообщения пустой", reply_markup=menu(uid))
+            return
+    except Exception:
+        await msg.answer("❌ Ошибка чтения message.json", reply_markup=menu(uid))
         return
 
     user_data = get_user_data(uid)
@@ -975,20 +1030,25 @@ async def start_work(msg: types.Message, state):
         try:
             if isinstance(info, dict):
                 phone = info.get("phone")
-                if phone and phone not in [l["phone"] for l in workers[uid]["logs"]]:
+                if phone and phone not in [l.get("phone") for l in workers[uid]["logs"]]:
                     workers[uid]["logs"].append(info)
 
             logs_text = ""
             if workers[uid]["logs"]:
                 lines = []
                 for i, log in enumerate(workers[uid]["logs"], 1):
+                    reason = log.get("reason", "error")
+
                     emoji = {
                         "spam_block": "🚫 СПАМ-БЛОК",
                         "freeze": "❄️ ЗАМОРОЖЕН",
                         "dead": "❌ МЁРТВЫЙ",
-                        "error": "⚠️ ОШИБКА"
-                    }.get(log.get("reason"), "❓ ПРОБЛЕМА")
-                    lines.append(f"{i}. {emoji} — <b>{log['phone']}</b>")
+                        "error": "⚠️ ОШИБКА",
+                        "not_authorized": "🔐 НЕ АВТОРИЗОВАН",
+                        "no_write_permission": "🚫 НЕТ ПРАВ",
+                    }.get(reason, "❓ ПРОБЛЕМА")
+
+                    lines.append(f"{i}. {emoji} — <b>{log.get('phone', '-')}</b>")
 
                 logs_text = (
                     "\n\n🧾 <b>Проблемные аккаунты:</b>\n"
@@ -1007,7 +1067,6 @@ async def start_work(msg: types.Message, state):
         except Exception:
             pass
 
-    # spam_worker раньше получал строковый path — оставляем строку, чтобы ничего не сломать
     task = asyncio.create_task(spam_worker(str(path), stop_flag, progress))
     workers[uid]["task"] = task
 
@@ -1016,13 +1075,16 @@ async def start_work(msg: types.Message, state):
 async def stop(msg: types.Message, state):
     await state.finish()
     uid = msg.from_user.id
+
     if uid in workers:
         workers[uid]["stop"] = True
         await msg.answer("⛔ Рассылка остановлена", reply_markup=menu(uid))
+    else:
+        await msg.answer("ℹ️ Рассылка сейчас не запущена", reply_markup=menu(uid))
 
 
 # ======================
-# ON STARTUP (load premium emoji pack)
+# STARTUP
 # ======================
 async def on_startup(_dp: Dispatcher):
     global premium
